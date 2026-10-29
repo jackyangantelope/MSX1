@@ -1,0 +1,7 @@
+deps/BareMSX
+deps/devices
+deps/Z80
+deps/Zeta
+deps/emu2149
+deps/emu2212
+deps/pico_shared

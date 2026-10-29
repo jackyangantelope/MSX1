@@ -1,0 +1,22 @@
+{
+  "BareMSX": {
+    "commit": "66df161d0356bffd9f73b366e663437f2074b621",
+    "url": "https://github.com/joskwanten/BareMSX.git"
+  },
+  "Z80": {
+    "commit": "dcc3f28d3a344b3080e7ae6f1e7b694b45b370d9",
+    "url": "https://github.com/redcode/Z80.git"
+  },
+  "Zeta": {
+    "commit": "42830b0e735cc3a83c7630e2dcf21949e8441c6d",
+    "url": "https://github.com/redcode/Zeta.git"
+  },
+  "emu2149": {
+    "commit": "441f3dc295a9b82db16921461f0678b483db8304",
+    "url": "https://github.com/digital-sound-antiques/emu2149.git"
+  },
+  "emu2212": {
+    "commit": "e1735c83707e6ee739a123476344659f7fa9fb18",
+    "url": "https://github.com/digital-sound-antiques/emu2212.git"
+  }
+}

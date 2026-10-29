@@ -1,0 +1,105 @@
+--- upstream/drivers/pico_hdmi/hstx.c
++++ local/drivers/pico_hdmi/hstx.c
+@@ -5,8 +5,16 @@
+ // Custom changes
+ volatile bool HSTX_vblank = false;
+ static uint8_t FRAMEBUFFER[(MODE_H_ACTIVE_PIXELS / 2) * (MODE_V_ACTIVE_LINES / 2) * 2] __attribute__((aligned(4)));
++#if JACK_HSTX_DOUBLE_BUFFER
++static uint8_t BACKBUFFER[sizeof(FRAMEBUFFER)] __attribute__((aligned(4)));
++static uint32_t frame_pending;
++#endif
+ // uint16_t ALIGNED HDMIlines[2][MODE_H_ACTIVE_PIXELS] = {0};
++#if JACK_HSTX_DOUBLE_BUFFER
++static uint8_t *WriteBuf = BACKBUFFER;
++#else
+ static uint8_t *WriteBuf = FRAMEBUFFER;
++#endif
+ static uint8_t *DisplayBuf = FRAMEBUFFER;
+ static uint8_t *LayerBuf = FRAMEBUFFER;
+ static uint16_t *tilefcols;
+@@ -84,6 +92,25 @@
+     return WriteBuf;
+ }
+ 
++bool hstx_framebuffer_available(void)
++{
++#if JACK_HSTX_DOUBLE_BUFFER
++    return __atomic_load_n(&frame_pending, __ATOMIC_ACQUIRE) == 0;
++#else
++    return true;
++#endif
++}
++
++bool hstx_present_frame(void)
++{
++#if JACK_HSTX_DOUBLE_BUFFER
++    if (!hstx_framebuffer_available()) return false;
++    // Publish completed pixels; core1 owns both buffers until its VSYNC swap.
++    __atomic_store_n(&frame_pending, 1, __ATOMIC_RELEASE);
++#endif
++    return true;
++}
++
+ void hstx_setScanLines(int enable)
+ {
+     // Set the scanlines effect flag
+@@ -106,6 +133,15 @@
+ }
+ void __not_in_flash_func(hstx_vsync_callbackfunc)(void)
+ {
++#if JACK_HSTX_DOUBLE_BUFFER
++   if (__atomic_load_n(&frame_pending, __ATOMIC_ACQUIRE)) {
++       uint8_t *old_display = DisplayBuf;
++       DisplayBuf = WriteBuf;
++       WriteBuf = old_display;
++       // Release the old front buffer only after scanout has switched away.
++       __atomic_store_n(&frame_pending, 0, __ATOMIC_RELEASE);
++   }
++#endif
+    HSTX_vblank = true;
+ }
+ 
+@@ -389,4 +425,4 @@
+ 
+     multicore_launch_core1_with_stack(video_output_core1_run, new_stack, new_stack_bytes);
+ }
+-#endif+#endif
+--- upstream/drivers/pico_hdmi/hstx.h
++++ local/drivers/pico_hdmi/hstx.h
+@@ -20,6 +20,11 @@
+ void hstx_waitForVSync(void);
+ void hstx_paceFrame(bool init);
+ uint8_t *hstx_getframebuffer(void);
++// Opt-in JACK_HSTX_DOUBLE_BUFFER: core0 must acquire availability before writing,
++// then present once after drawing. Do not retain/use the pointer while pending.
++// The completed buffer becomes visible at VSYNC on core1. Default mode is no-op.
++bool hstx_framebuffer_available(void);
++bool hstx_present_frame(void);
+ void hstx_setScanLines(int enable);
+ void hstx_setAspectRatio87(int enable);
+ void hstx_setScanLineType(int type);
+@@ -41,4 +46,4 @@
+ #ifdef __cplusplus
+ }
+ #endif
+-#endif+#endif
+--- upstream/drivers/pico_hdmi/video_output.c
++++ local/drivers/pico_hdmi/video_output.c
+@@ -569,9 +569,17 @@
+ #ifndef NOHSTXCLOCK
+     uint32_t sys_freq = clock_get_hz(clk_sys);
+ 
++#ifdef JACK_HSTX_126MHZ
++    // The TMDS timings below require 126 MHz HSTX for a 60 Hz video signal.
++    // Keep clk_sys at 252 MHz for the emulator and divide only clk_hstx.
++    clock_configure_int_divider(clk_hstx,
++                                0, // No glitchless mux
++                                CLOCKS_CLK_HSTX_CTRL_AUXSRC_VALUE_CLK_SYS, sys_freq, 2);
++#else
+     clock_configure_int_divider(clk_hstx,
+                                 0, // No glitchless mux
+                                 CLOCKS_CLK_HSTX_CTRL_AUXSRC_VALUE_CLK_SYS, sys_freq, MODE_HSTX_CLK_DIV);
++#endif
+ #endif
+     // Claim DMA channels for HSTX (channels 0 and 1)
+     dma_channel_claim(DMACH_PING);
